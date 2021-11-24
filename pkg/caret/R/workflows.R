@@ -72,6 +72,38 @@ nominalTrainWorkflow <- function(x, y, wts, info, method, ppOpts, ctrl, lev, tes
     if(!is.null(ctrl$indexExtra)) ctrl$indexExtra <- c(list("AllData" = NULL), ctrl$indexExtra)
   }
   `%op%` <- getOper(ctrl$allowParallel && getDoParWorkers() > 1)
+  cvsbf_obj <- list(...)$cvsbf
+  if (!is.null(cvsbf_obj)) {
+    # Test whether sbf functions works
+    # To save time, we only use a subset of x to do the test
+    cvsbf_check <- try({
+      col_idx <- sample(1:ncol(x), size = min(100, ncol(x)))
+      x <- x[, col_idx, drop = FALSE]
+      foreach(idx = 1) %op% {
+        if (isTRUE(cvsbf_obj$multivariate)) {
+          scores <-
+            cvsbf_obj$functions$score(as.data.frame(x, stringsAsFactors = TRUE), y)
+          stopifnot(length(scores) == ncol(x))
+        } else  {
+          scores <-
+            vapply(
+              as.data.frame(x, stringsAsFactors = TRUE),
+              cvsbf_obj$functions$score,
+              double(1),
+              y = y
+            )
+        }
+        retained <- cvsbf_obj$functions$filter(scores, x, y)
+        stopifnot(is.logical(retained) &&
+                    length(retained) == ncol(x))
+        retained
+      }
+    }, silent = TRUE)
+
+    stopifnot("sbf functions don't work properly" =
+                !is(cvsbf_check, "try-error"))
+  }
+
   keep_pred <- isTRUE(ctrl$savePredictions) || ctrl$savePredictions %in% c("all", "final")
   pkgs <- c("methods", "caret")
   if(!is.null(method$library)) pkgs <- c(pkgs, method$library)

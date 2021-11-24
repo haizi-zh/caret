@@ -43,7 +43,44 @@
     rm(tmp)
   }
 
-  modelFit <- method$fit(x = x,
+  cvsbf <- list(...)$cvsbf
+  if (!is.null(cvsbf)) {
+    if (isTRUE(cvsbf$multivariate)) {
+      scores <-
+        cvsbf$functions$score(as.data.frame(x, stringsAsFactors = TRUE), y)
+      if (length(scores) != ncol(x))
+        stop(
+          paste(
+            "when control$multivariate == TRUE, 'scores'",
+            "should return a vector with",
+            ncol(x),
+            "numeric values"
+          )
+        )
+    } else  {
+      scores <-
+        vapply(as.data.frame(x, stringsAsFactors = TRUE),
+               cvsbf$functions$score,
+               double(1),
+               y = y)
+    }
+
+    retained <- cvsbf$functions$filter(scores, x, y)
+    ## deal with zero length results
+
+    if (is.matrix(x) |
+        is.data.frame(x) |
+        inherits(x, "dgCMatrix"))
+      x2 <- x[, which(retained), drop = FALSE]
+    else
+      x2 <- x[, which(retained)]
+    xNamesEffective <- colnames(x2)
+  } else {
+    x2 <- x
+    xNamesEffective <- NULL
+  }
+
+  modelFit <- method$fit(x = x2,
                          y = y, wts = wts,
                          param  = tuneValue, lev = obsLevels,
                          last = last,
@@ -55,6 +92,8 @@
        !(method$label %in% c("Ensemble Partial Least Squares Regression",
                              "Ensemble Partial Least Squares Regression with Feature Selection"))) {
     modelFit$xNames <- colnames(x)
+    if (!is.null(xNamesEffective))
+      modelFit$xNamesEffective <- xNamesEffective
     modelFit$problemType <- if(is.factor(y)) "Classification" else "Regression"
     modelFit$tuneValue <- tuneValue
     modelFit$obsLevels <- obsLevels
