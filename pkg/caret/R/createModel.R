@@ -98,6 +98,10 @@
     modelFit$tuneValue <- tuneValue
     modelFit$obsLevels <- obsLevels
     modelFit$param <- list(...)
+  } else {
+    attr(modelFit, "xNames") <- colnames(x)
+    if (!is.null(xNamesEffective))
+      attr(modelFit, "xNamesEffective") <- xNamesEffective
   }
 
   list(fit = modelFit, preProc = ppObj)

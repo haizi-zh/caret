@@ -6,8 +6,14 @@ predictionFunction <- function(method, modelFit, newdata, preProc = NULL, param 
   if(!is.null(newdata) && !is.null(preProc)) newdata <- predict(preProc, newdata)
 
   # Be aware of potential feature reduction
-  if (!is.null(modelFit[["xNamesEffective"]])) {
-    newdata <- newdata[, modelFit$xNamesEffective]
+  if (isS4(modelFit)) {
+    features <- attr(modelFit, "xNamesEffective")
+  } else {
+    features <- modelfit[["xNamesEffective"]]
+  }
+
+  if (!is.null(features)) {
+    newdata <- newdata[, features, drop = FALSE]
   }
 
   out <- method$predict(modelFit = modelFit,

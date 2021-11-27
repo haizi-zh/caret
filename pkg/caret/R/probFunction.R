@@ -7,8 +7,14 @@ probFunction <- function(method, modelFit, newdata = NULL, preProc = NULL, param
   obsLevels <- levels(modelFit)
 
   # Be aware of potential feature reduction
-  if (!is.null(modelFit[["xNamesEffective"]])) {
-    newdata <- newdata[, modelFit$xNamesEffective]
+  if (isS4(modelFit)) {
+    features <- attr(modelFit, "xNamesEffective")
+  } else {
+    features <- modelfit[["xNamesEffective"]]
+  }
+
+  if (!is.null(features)) {
+    newdata <- newdata[, features, drop = FALSE]
   }
 
   classProb <- method$prob(modelFit = modelFit,
