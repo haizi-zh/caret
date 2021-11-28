@@ -9,7 +9,7 @@ predictionFunction <- function(method, modelFit, newdata, preProc = NULL, param 
   if (isS4(modelFit)) {
     features <- attr(modelFit, "xNamesEffective")
   } else {
-    features <- modelfit[["xNamesEffective"]]
+    features <- modelFit[["xNamesEffective"]]
   }
 
   if (!is.null(features)) {

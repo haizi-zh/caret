@@ -1422,3 +1422,36 @@ predict.nullModel <- function (object, newdata = NULL, type  = NULL, ...)
   }
   out
 }
+
+
+#' @rdname caret-internal
+#'
+#' Apply SBF functions and get scores for each feature
+sbfScores <- function(sbfControl, x, y) {
+  x <- as.data.frame(x, stringsAsFactors = TRUE)
+  if (isTRUE(sbfControl$multivariate)) {
+    scores <-
+      sbfControl$functions$score(x, y)
+    if (length(scores) != ncol(x))
+      stop(
+        paste(
+          "when control$multivariate == TRUE, 'scores'",
+          "should return a vector with",
+          ncol(x),
+          "numeric values"
+        )
+      )
+  } else  {
+    scores <- vapply(x, sbfControl$functions$score, double(1), y = y)
+  }
+  scores
+}
+
+
+#' @rdname caret-internal
+#'
+#' Apply SBF functions and get the "retained" features
+sbfRetained <- function(sbfControl, x, y) {
+  scores <- sbfScores(sbfControl, x, y)
+  sbfControl$functions$filter(scores, x, y)
+}

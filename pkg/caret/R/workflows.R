@@ -72,42 +72,67 @@ nominalTrainWorkflow <- function(x, y, wts, info, method, ppOpts, ctrl, lev, tes
     if(!is.null(ctrl$indexExtra)) ctrl$indexExtra <- c(list("AllData" = NULL), ctrl$indexExtra)
   }
   `%op%` <- getOper(ctrl$allowParallel && getDoParWorkers() > 1)
-  cvsbf_obj <- list(...)$cvsbf
-  if (!is.null(cvsbf_obj)) {
-    # Test whether sbf functions works
-    # To save time, we only use a subset of x to do the test
-    cvsbf_check <- try({
-      col_idx <- sample(1:ncol(x), size = min(100, ncol(x)))
-      x <- x[, col_idx, drop = FALSE]
-      foreach(idx = 1) %op% {
-        if (isTRUE(cvsbf_obj$multivariate)) {
-          scores <-
-            cvsbf_obj$functions$score(as.data.frame(x, stringsAsFactors = TRUE), y)
-          stopifnot(length(scores) == ncol(x))
-        } else  {
-          scores <-
-            vapply(
-              as.data.frame(x, stringsAsFactors = TRUE),
-              cvsbf_obj$functions$score,
-              double(1),
-              y = y
-            )
-        }
-        retained <- cvsbf_obj$functions$filter(scores, x, y)
-        stopifnot(is.logical(retained) &&
-                    length(retained) == ncol(x))
-        retained
-      }
-    }, silent = TRUE)
 
-    stopifnot("sbf functions don't work properly" =
-                !is(cvsbf_check, "try-error"))
+  ellipsis_args <- list(...)
+  cvsbf_obj <- ellipsis_args$cvsbf
+  if (length(cvsbf_obj) != 0) {
+    # Test whether sbf functions works
+    # To save time, we only use a subset of x (first 100 columns) to do the test
+    cvsbf_check <- try(local({
+      x <- x[, seq(min(100, ncol(x))), drop = FALSE]
+      foreach(
+        idx = 1,
+        .export = c("cvsbf_obj", "y"),
+        .packages = "caret"
+      ) %op% {
+        local({
+          retained <- sbfRetained(cvsbf_obj, x, y)
+          stopifnot(is.logical(retained) &&
+                      length(retained) == ncol(x))
+          retained
+        })
+      }
+    }), silent = TRUE)
+
+    if (is(cvsbf_check, "try-error")) {
+      stop(cat(paste0(
+        "sbf functions don't work properly: ",
+        attr(cvsbf_check, "condition")$message
+      )))
+    }
   }
 
   keep_pred <- isTRUE(ctrl$savePredictions) || ctrl$savePredictions %in% c("all", "final")
   pkgs <- c("methods", "caret")
   if(!is.null(method$library)) pkgs <- c(pkgs, method$library)
   export <- c()
+
+  # For SBF, it's much more efficient to avoid performing SBF within each loop
+  # Pre-calculate feature selection scores
+  if (length(cvsbf_obj) != 0) {
+    warning(paste0("Pre-calculating feature selection scores for all ", length(resampleIndex), " validation folds ..."))
+    cached_feature_scores <-
+      foreach(
+        iter = seq(along = resampleIndex),
+        .packages = "caret"
+      ) %op% {
+        local({
+          if (names(resampleIndex)[iter] != "AllData") {
+            modelIndex <- resampleIndex[[iter]]
+            holdoutIndex <- ctrl$indexOut[[iter]]
+          } else {
+            modelIndex <- 1:nrow(x)
+            holdoutIndex <- modelIndex
+          }
+
+          x <- subset_x(x, modelIndex)
+          y <- y[modelIndex]
+
+          sbfScores(cvsbf_obj, x, y)
+        })
+      }
+  } else
+    cached_feature_scores <- NULL
 
   result <- foreach(iter = seq(along = resampleIndex), .combine = "c", .verbose = FALSE, .export = export, .packages = "caret") %:%
     foreach(parm = 1L:nrow(info$loop), .combine = "c", .verbose = FALSE, .export = export , .packages = "caret")  %op%
@@ -134,18 +159,36 @@ nominalTrainWorkflow <- function(x, y, wts, info, method, ppOpts, ctrl, lev, tes
         submod <- info$submodels[[parm]]
       } else submod <- NULL
 
-      mod <- try(
-        createModel(x = subset_x(x, modelIndex),
-                    y = y[modelIndex],
-                    wts = wts[modelIndex],
-                    method = method,
-                    tuneValue = info$loop[parm,,drop = FALSE],
-                    obsLevels = lev,
-                    pp = ppp,
-                    classProbs = ctrl$classProbs,
-                    sampling = ctrl$sampling,
-                    ...),
-        silent = TRUE)
+      # This is a bit ugly. However, it's essential for efficient SBF
+      iter <- force(iter)
+      if (length(ellipsis_args$cvsbf) != 0) {
+        # Cache pre-calculated scores
+        ellipsis_args$cvsbf <- list(
+          multivariate = TRUE,
+          functions = list(
+            scores = function(x, y) {
+              cached_feature_scores[[iter]]
+            },
+            filter = ellipsis_args$cvsbf$functions$filter
+          )
+        )
+      }
+
+      mod <- try(do.call(what = createModel, args = c(
+        ellipsis_args,
+        list(
+          x = subset_x(x, modelIndex),
+          y = y[modelIndex],
+          wts = wts[modelIndex],
+          method = method,
+          tuneValue = info$loop[parm, , drop = FALSE],
+          obsLevels = lev,
+          pp = ppp,
+          classProbs = ctrl$classProbs,
+          sampling = ctrl$sampling
+        )
+      )),
+      silent = TRUE)
 
       if(testing) print(mod)
 

@@ -43,48 +43,34 @@
     rm(tmp)
   }
 
-  cvsbf <- list(...)$cvsbf
-  if (!is.null(cvsbf)) {
-    if (isTRUE(cvsbf$multivariate)) {
-      scores <-
-        cvsbf$functions$score(as.data.frame(x, stringsAsFactors = TRUE), y)
-      if (length(scores) != ncol(x))
-        stop(
-          paste(
-            "when control$multivariate == TRUE, 'scores'",
-            "should return a vector with",
-            ncol(x),
-            "numeric values"
-          )
-        )
-    } else  {
-      scores <-
-        vapply(as.data.frame(x, stringsAsFactors = TRUE),
-               cvsbf$functions$score,
-               double(1),
-               y = y)
-    }
-
-    retained <- cvsbf$functions$filter(scores, x, y)
+  # With CV SBF enabled, it's possible the "effective" features make up a subset
+  # of the original features
+  ellipsis_args <- list(...)
+  cvsbf <- ellipsis_args$cvsbf
+  if (length(cvsbf) != 0) {
+    retained <- sbfRetained(cvsbf, x, y)
     ## deal with zero length results
-
-    if (is.matrix(x) |
-        is.data.frame(x) |
-        inherits(x, "dgCMatrix"))
-      x2 <- x[, which(retained), drop = FALSE]
-    else
-      x2 <- x[, which(retained)]
+    x2 <- subset_x(x = x, ind = which(retained), by_column = TRUE)
     xNamesEffective <- colnames(x2)
   } else {
     x2 <- x
     xNamesEffective <- NULL
   }
 
-  modelFit <- method$fit(x = x2,
-                         y = y, wts = wts,
-                         param  = tuneValue, lev = obsLevels,
-                         last = last,
-                         classProbs = classProbs, ...)
+  ellipsis_args$cvsbf <- NULL
+  modelFit <- do.call(what = method$fit, args = c(
+    list(
+      x = x2,
+      y = y,
+      wts = wts,
+      param = tuneValue,
+      lev = obsLevels,
+      last = last,
+      classProbs = classProbs
+    ),
+    ellipsis_args
+  ))
+
   ## for models using S4 classes, you can't easily append data, so
   ## exclude these and we'll use other methods to get this information
   if(is.null(method$label)) method$label <- ""
@@ -92,7 +78,7 @@
        !(method$label %in% c("Ensemble Partial Least Squares Regression",
                              "Ensemble Partial Least Squares Regression with Feature Selection"))) {
     modelFit$xNames <- colnames(x)
-    if (!is.null(xNamesEffective))
+    if (length(xNamesEffective) != 0)
       modelFit$xNamesEffective <- xNamesEffective
     modelFit$problemType <- if(is.factor(y)) "Classification" else "Regression"
     modelFit$tuneValue <- tuneValue
@@ -100,7 +86,7 @@
     modelFit$param <- list(...)
   } else {
     attr(modelFit, "xNames") <- colnames(x)
-    if (!is.null(xNamesEffective))
+    if (length(xNamesEffective) != 0)
       attr(modelFit, "xNamesEffective") <- xNamesEffective
   }
 

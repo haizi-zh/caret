@@ -595,11 +595,20 @@ check_na_conflict <- function(call_obj) {
 
 # in case an object is a sparse matrix or tibble
 # do not use `drop` as an argument
-subset_x <- function(x, ind) {
-  if(is.matrix(x) | is.data.frame(x) | inherits(x, "dgCMatrix"))
-    x <- x[ind,,drop = FALSE] else
-      x <- x[ind,]
+subset_x <- function(x, ind, by_column = FALSE) {
+  if (by_column) {
+    if (is.matrix(x) | is.data.frame(x) | inherits(x, "dgCMatrix"))
+      x <- x[, ind, drop = FALSE]
+    else
+      x <- x[, ind]
     x
+  } else {
+    if (is.matrix(x) | is.data.frame(x) | inherits(x, "dgCMatrix"))
+      x <- x[ind, , drop = FALSE]
+    else
+      x <- x[ind, ]
+    x
+  }
 }
 
 fail_warning <- function(settings, msg, where = "model fit", iter, verb) {
