@@ -150,10 +150,19 @@ predict.train <- function(object, newdata = NULL, type = "raw", na.action = na.o
     } else stop("please specify data via newdata")
   }
 
-  if("xNames" %in% names(object$finalModel) &
-     is.null(object$preProcess$method$pca) &
-     is.null(object$preProcess$method$ica))
-      newdata <- newdata[, colnames(newdata) %in% object$finalModel$xNames, drop = FALSE]
+  if (isS4(object$finalModel)) {
+    if ("xNames" %in% names(attributes(object$finalModel)) &
+        is.null(object$preProcess$method$pca) &
+        is.null(object$preProcess$method$ica)) {
+      newdata <- newdata[, attr(object$finalModel, "xNames"), drop = FALSE]
+    }
+  } else {
+    if("xNames" %in% names(object$finalModel) &
+       is.null(object$preProcess$method$pca) &
+       is.null(object$preProcess$method$ica))
+      newdata <- newdata[, object$finalModel$xNames, drop = FALSE]
+  }
+
 
   if(type == "prob") {
     out <- probFunction(method = object$modelInfo,
